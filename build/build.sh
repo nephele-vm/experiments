@@ -25,7 +25,9 @@ clone_and_checkout() {
 	local name="${3-$(basename $repo)}"
 
 	echo
-	echo "*** Cloning '$repo' branch:$branch"
+	Green='\033[0;32m'
+	NC='\033[0m'
+	echo -e "${Green}*** Cloning '$repo' branch:$branch${NC}"
 
 	# clone only if it doesn't exist
 	[ ! -d $name ] && git clone "git@github.com:$repo.git" $name
@@ -101,7 +103,7 @@ UNIKRAFT_LIBS=(
 	"nephele-unikraft/lib-lwip;nephele-v01"
 	"nephele-unikraft/lib-mimalloc;nephele-v01"
 	"nephele-unikraft/lib-newlib;nephele-v01"
-	"unikraft/lib-nginx;d89c9a45d6a19eb71815492acb14b675e2da894a"
+	"nephele-unikraft/lib-nginx;nephele-v01"
 	"nephele-unikraft/lib-pthread-embedded;nephele-v01"
 	"nephele-unikraft/lib-python3;nephele-v01"
 	"nephele-unikraft/lib-redis;nephele-v01"
