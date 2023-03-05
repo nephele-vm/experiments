@@ -1,0 +1,49 @@
+#!/bin/bash
+
+CONFIG_DIR=$(dirname $BASH_SOURCE)
+
+FUZZ_ROOT=/root/fuzz-root
+
+############################################
+# Tools
+############################################
+
+KFX_DIR=/root/kfx.git
+KFX=$KFX_DIR/kfx
+
+AFL_DIR=$KFX_DIR/AFL
+AFL=$AFL_DIR/afl-fuzz
+AFL_INPUT_DIR=$AFL_DIR/input
+AFL_OUTPUT_DIR=$AFL_DIR/output
+
+############################################
+# Linux
+############################################
+
+LIN_ROOT=$FUZZ_ROOT/linux
+
+# app
+LIN_APP_DIR=$LIN_ROOT/app/fuzz-app.git
+LIN_APP_BIN=$LIN_APP_DIR/fuzz-app
+
+# module
+LIN_XL_CONFIG=$CONFIG_DIR/linux/alpine/xl-config
+LIN_VM_JSON=$CONFIG_DIR/linux/alpine/alpine-fuzz.json
+LIN_MODULE=testmodule_xen.ko
+
+############################################
+# Unikraft
+############################################
+
+UK_ROOT=$FUZZ_ROOT/unikraft
+UK_APP_DIR=$UK_ROOT/apps/fuzz
+
+IMG_NAME=fuzz-app
+ARCH=x86_64
+PLATFORM=xen
+APP_BASENAME=${IMG_NAME}_${PLATFORM}-${ARCH}
+
+UK_XL_CONFIG_TMPL=$CONFIG_DIR/apps/fuzz/unikraft/xl-config-$IMG_NAME.tmpl
+UK_APP_BIN=$UK_APP_DIR/$APP_BASENAME.dbg
+UK_VM_JSON=$UK_APP_DIR/$APP_BASENAME.json
+

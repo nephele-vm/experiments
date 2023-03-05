@@ -1,0 +1,16 @@
+Example of $FUZZ_ROOT hierarchy:
+
+/root/fuzz-root/
+├── linux
+│   ├── app
+│   │   └── fuzz-app.git
+│   │       ├── ....
+│   └── module
+│       └── testmodule_xen.ko
+└── unikraft
+    └── apps
+        └── fuzz
+            ├── fuzz-app_xen-x86_64
+            ├── fuzz-app_xen-x86_64.dbg
+            └── fuzz-app_xen-x86_64.json
+

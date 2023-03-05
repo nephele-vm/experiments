@@ -1,0 +1,16 @@
+name="alpine-fuzz"
+builder="hvm"
+vcpus=1
+maxvcpus=1
+memory=512
+maxmem=512
+hap=1
+boot="cd"
+vif=[ 'mac=aa:bb:cc:06:76:02,ip=10.0.0.2 255.255.255.0 10.0.0.1,bridge=qemubr0' ]
+vnc=0
+nomigrate=1
+# Make sure to update the paths below!
+disk=['file:/root/alpine-vm/linux-xen-fuzz.img,hda,w' ]
+on_crash="destroy"
+on_shutdown="destroy"
+

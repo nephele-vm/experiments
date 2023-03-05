@@ -1,0 +1,9 @@
+name = "fuzz-app"
+kernel = "/root/fuzz-root/unikraft/apps/fuzz/fuzz-app_xen-x86_64.dbg"
+memory = "8"
+vcpus = "1"
+max_clones="2"
+cmdline="${APP_CMDLINE}"
+
+on_crash = "preserve"
+
