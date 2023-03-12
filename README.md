@@ -3,9 +3,8 @@
 Nephele is a solution for cloning unikernel-based VMs on Xen and that provides
 8x faster instantiation times and can run 3x more active unikernel VMs on the
 same hardware compared to booting separate unikernels. Its design,
-implementation and evaluation is presented in the paper "Nephele: Extending
-Virtualization Environments for Cloning Unikernel-based VMs" which was accepted
-at EuroSys'23.
+implementation and evaluation is presented in the EuroSys'23 paper "Nephele: Extending
+Virtualization Environments for Cloning Unikernel-based VMs".
 
 The current repository contains information and files needed for deploying and
 running Nephele on commodity hardware.
@@ -58,10 +57,10 @@ build and install the Xen tools (e.g. `xl`, `oxenstored`, `xencloned`).
 4. **Reboot.** At this moment the host can be rebooted as it contains all the
 components needed to launch guests with Nephele.
 
-5. **Run `xencloned.** The `xencloned` daemon coordinates the userspace
-operations and I/O cloning of Nephele guests.  In a separate shell, run the
+5. **Run `xencloned`.** The `xencloned` daemon coordinates the userspace
+operations and I/O cloning of Nephele guests.  In a separate shell, run
 `xencloned --cache -x` for full optimization. For automated startup, update the
-`/etc/rc.local` or create a dedicated service to launch it.
+`/etc/rc.local` or create a dedicated service to launch `xencloned`.
 
 6. **Build the guests.** Running `build/build.sh guests` will build all the VM
 images for the applications evaluated in the Nephele paper:
@@ -96,7 +95,7 @@ cmdline=" -- -a measure-fork -m 16MB"
 
 ## `xencloned`
 The `xencloned` daemon is critical to Nephele as it coordinates the userspace operations and the I/O cloning.
-It's worth describing the options it supports:
+It's worth describing the options it provides:
 
 ```
 # xencloned --help
