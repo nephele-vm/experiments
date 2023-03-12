@@ -9,6 +9,8 @@ ROOTDIR="$(realpath $ROOTDIR)"
 NPROC=$(nproc)
 JOBS=$(( 4 * $NPROC ))
 
+DO_BUILD=${DO_BUILD:-1}
+
 enter_dir()    { pushd "$1" &>/dev/null; }
 enter_newdir() { mkdir -p "$1" &>/dev/null; enter_dir "$1"; }
 exit_dir()     { popd &>/dev/null; }
@@ -38,63 +40,87 @@ clone_and_checkout() {
 }
 
 build_ovs() {
-	print_banner "Building OVS .."
+	print_banner "OVS"
 	clone_and_checkout "nephele-vm/ovs" "nephele-v01"
-	enter_dir ovs
-	./boot.sh
-	./configure --prefix=/root/dist/ovs/ --enable-shared
-	make -j$JOBS
-	make install
-	exit_dir
+	if [ $DO_BUILD -eq 1 ]; then
+		enter_dir ovs
+		./boot.sh
+		./configure --prefix=/root/dist/ovs/ --enable-shared
+		make -j$JOBS
+		make install
+		exit_dir
+	fi
 }
 
 build_xen() {
-	print_banner "Building Xen .."
+	local component="$1"
+	print_banner "Xen $component"
 	clone_and_checkout "nephele-vm/xen" "nephele-v01"
-	enter_dir xen
-	./configure --disable-docs --disable-stubdom --prefix=/root/dist/xen/
+	if [ $DO_BUILD -eq 1 ]; then
+		enter_dir xen
 
-	# build hypervisor
-	enter_dir xen
-	cp $SCRIPT_DIR/xen/config .config
-	make -j$JOBS CONFIG_MEM_SHARING=y
-	exit_dir
+		# configure
+		[ -f config.log ] && ./configure --disable-docs --disable-stubdom --prefix=/root/dist/xen/
 
-	# build tools
-	make -j$JOBS dist-tools CONFIG_SEABIOS=n CONFIG_IPXE=n CONFIG_QEMU_XEN=y CONFIG_QEMUU_EXTRA_ARGS="--disable-slirp --enable-virtfs --disable-werror" OCAML_TOOLS=y
-	make install-tools
+		# build hypervisor
+		if [ "$component" = "hypervisor" -o "$component" = "all" ]; then
+			enter_dir xen
+			cp $SCRIPT_DIR/xen/config .config
+			make -j$JOBS CONFIG_MEM_SHARING=y
+			exit_dir
+		fi
 
-	exit_dir
+		# build tools
+		if [ "$component" = "tools" -o "$component" = "all" ]; then
+			make -j$JOBS dist-tools CONFIG_SEABIOS=n CONFIG_IPXE=n CONFIG_QEMU_XEN=y CONFIG_QEMUU_EXTRA_ARGS="--disable-slirp --enable-virtfs --disable-werror" OCAML_TOOLS=y
+			make install-tools
+		fi
+
+		exit_dir
+	fi
 }
 
 build_linux() {
-	print_banner "Building Linux .."
+	print_banner "Linux"
 	clone_and_checkout "nephele-vm/linux" "nephele-v01"
-	enter_dir linux
+	if [ $DO_BUILD -eq 1 ]; then
+		enter_dir linux
 
-	cp $SCRIPT_DIR/linux/config-light .config
-	make -j$JOBS bzImage
-	LINUX_VERSION="$(make kernelversion)+"
-	INSTALLKERNEL=installkernel sh ./arch/x86/boot/install.sh $LINUX_VERSION arch/x86/boot/bzImage System.map
+		# configure
+		[ ! -f .config ] && cp $SCRIPT_DIR/linux/config-light .config
 
-	make -j$JOBS modules
-	make modules_install
+		if [ "$component" = "kernel" -o "$component" = "all" ]; then
+			make -j$JOBS bzImage
+			LINUX_VERSION="$(make kernelversion)+"
+			INSTALLKERNEL=installkernel sh ./arch/x86/boot/install.sh $LINUX_VERSION arch/x86/boot/bzImage System.map
+		fi
 
-	exit_dir
+		# build modules
+		if [ "$component" = "modules" -o "$component" = "all" ]; then
+			make -j$JOBS modules
+			make modules_install
+		fi
+
+		exit_dir
+	fi
 }
 
 build_minios() {
-	print_banner "Building Mini-OS .."
+	print_banner "Mini-OS"
 
 	CLONING_APPS_DIR="$ROOTDIR/unikraft/apps/cloning-apps"
-	[ ! -d $CLONING_APPS_DIR ] && build_unikraft
+	if [ $DO_BUILD -eq 1 ]; then
+		[ ! -d $CLONING_APPS_DIR ] && build_unikraft
+	fi
 
 	clone_and_checkout "nephele-vm/lwip" "nephele-v01"
 	clone_and_checkout "nephele-vm/mini-os" "nephele-v01"
 
-	enter_dir mini-os
-	make -j$NPROC debug=n verbose=y CONFIG_PARAVIRT=y CONFIG_NETFRONT=y CONFIG_BLKFRONT=n CONFIG_CONSFRONT=n CONFIG_FBFRONT=n CONFIG_KBDFRONT=n CONFIG_START_NETWORK=y lwip=y LWIPDIR=$ROOTDIR/lwip CLONING_APPS_DIR=$CLONING_APPS_DIR APP=server-udp
-	exit_dir
+	if [ $DO_BUILD -eq 1 ]; then
+		enter_dir mini-os
+		make -j$NPROC debug=n verbose=y CONFIG_PARAVIRT=y CONFIG_NETFRONT=y CONFIG_BLKFRONT=n CONFIG_CONSFRONT=n CONFIG_FBFRONT=n CONFIG_KBDFRONT=n CONFIG_START_NETWORK=y lwip=y LWIPDIR=$ROOTDIR/lwip CLONING_APPS_DIR=$CLONING_APPS_DIR APP=server-udp
+		exit_dir
+	fi
 }
 
 UNIKRAFT_LIBS=(
@@ -115,6 +141,7 @@ UNIKRAFT_APPS=(
 	"nephele-unikraft/app-nginx;nephele-v01"
 	"nephele-unikraft/app-python;nephele-v01"
 	"nephele-unikraft/app-redis;nephele-v01"
+	"nephele-unikraft/app-fuzz;nephele-v01"
 )
 
 build_unikraft() {
@@ -147,13 +174,14 @@ build_unikraft() {
 		# copy config file
 		cp config/config-unikraft-build .config
 
-		# build
-		if [ "$name" = "cloning-apps" ]; then
-			make -f Makefile.unikraft prepare
-			make -f Makefile.unikraft -j$JOBS
-		else
-			make prepare
-			make -j$JOBS
+		if [ $DO_BUILD -eq 1 ]; then
+			if [ "$name" = "cloning-apps" ]; then
+				make -f Makefile.unikraft prepare
+				make -f Makefile.unikraft -j$JOBS
+			else
+				make prepare
+				make -j$JOBS
+			fi
 		fi
 		exit_dir
 	done
@@ -165,11 +193,35 @@ build_unikraft() {
 [ ! -d $ROOTDIR ] && mkdir -p $ROOTDIR
 enter_dir $ROOTDIR
 
-build_ovs
-build_xen
-build_linux
-build_unikraft
-build_minios
+COMPONENT="$1"
+
+if [ -z "$COMPONENT" -o "$COMPONENT" = "all" ]; then
+	build_xen all
+	build_linux all
+	build_ovs
+	build_unikraft
+	build_minios
+
+elif [ "$COMPONENT" = "xen" ]; then
+	build_xen hypervisor
+
+elif [ "$COMPONENT" = "linux" ]; then
+	build_linux kernel
+	build_linux modules
+
+elif [ "$COMPONENT" = "userspace" ]; then
+	build_xen tools
+	build_ovs
+
+elif [ "$COMPONENT" = "guests" ]; then
+	build_unikraft
+	build_minios
+
+else
+	echo "Unknown component: $COMPONENT."
+	echo "Usage: $0 [all|xen|linux|userspace|guests]"
+	exit 2
+fi
 
 exit_dir
 
