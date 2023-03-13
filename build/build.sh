@@ -3,13 +3,21 @@ set -e
 
 SCRIPT_DIR="$(realpath $(dirname $0))"
 
-ROOTDIR="${1:-"$SCRIPT_DIR/../dev"}"
+ROOTDIR="${ROOTDIR:-"$SCRIPT_DIR/../dev"}"
 ROOTDIR="$(realpath $ROOTDIR)"
 
 NPROC=$(nproc)
 JOBS=$(( 4 * $NPROC ))
 
 DO_BUILD=${DO_BUILD:-1}
+DO_DEV=0
+
+# Set default branch
+if [ $DO_DEV -eq 1 ]; then
+	BRANCH_DEFAULT="nephele-v01"
+else
+	BRANCH_DEFAULT="tags/eurosys23"
+fi
 
 enter_dir()    { pushd "$1" &>/dev/null; }
 enter_newdir() { mkdir -p "$1" &>/dev/null; enter_dir "$1"; }
@@ -24,7 +32,8 @@ print_banner() {
 clone_and_checkout() {
 	local repo="$1"
 	local branch="$2"
-	local name="${3-$(basename $repo)}"
+	local name="${3:-$(basename $repo)}"
+	local submodules="${4:-no}"
 
 	echo
 	Green='\033[0;32m'
@@ -32,35 +41,53 @@ clone_and_checkout() {
 	echo -e "${Green}*** Cloning '$repo' branch:$branch${NC}"
 
 	# clone only if it doesn't exist
-	[ ! -d $name ] && git clone "git@github.com:$repo.git" $name
+	if [ ! -d $name ]; then
+		if [ $DO_DEV -eq 1 ]; then
+			git clone "git@github.com:$repo.git" $name
+		else
+			git clone "https://github.com/$repo.git" $name
+		fi
+	fi
 
 	enter_dir $name
-	git checkout $branch
+	if [ `dirname $branch` = "tags" ]; then
+		git checkout $branch -b `basename $branch`
+	else
+		git checkout $branch
+	fi
+	[ "$submodules" = "yes" ] && git submodule update --init
 	exit_dir
 }
 
 build_ovs() {
 	print_banner "OVS"
-	clone_and_checkout "nephele-vm/ovs" "nephele-v01"
-	if [ $DO_BUILD -eq 1 ]; then
+	clone_and_checkout "nephele-vm/ovs" "$BRANCH_DEFAULT"
+	OVS_DIST=/root/dist/ovs/
+	if [ $DO_BUILD -eq 1 -a ! -d "$OVS_DIST" ]; then
 		enter_dir ovs
-		./boot.sh
-		./configure --prefix=/root/dist/ovs/ --enable-shared
+		if [ ! -f config.log ]; then
+			./boot.sh
+			./configure --prefix="$OVS_DIST" --enable-shared
+		fi
 		make -j$JOBS
 		make install
 		exit_dir
 	fi
+	export OVS_SRC=$(realpath ovs)
+	echo "OVS_SRC=$OVS_SRC"
 }
 
 build_xen() {
 	local component="$1"
 	print_banner "Xen $component"
-	clone_and_checkout "nephele-vm/xen" "nephele-v01"
+	clone_and_checkout "nephele-vm/xen" "$BRANCH_DEFAULT"
 	if [ $DO_BUILD -eq 1 ]; then
+		[ "$component" = "tools" -o "$component" = "all" ] && build_ovs
+
 		enter_dir xen
 
 		# configure
-		[ -f config.log ] && ./configure --disable-docs --disable-stubdom --prefix=/root/dist/xen/
+		[ ! -f config.log ] && ./configure --disable-docs --disable-stubdom #--prefix=/root/dist/xen/
 
 		# build hypervisor
 		if [ "$component" = "hypervisor" -o "$component" = "all" ]; then
@@ -72,7 +99,7 @@ build_xen() {
 
 		# build tools
 		if [ "$component" = "tools" -o "$component" = "all" ]; then
-			make -j$JOBS dist-tools CONFIG_SEABIOS=n CONFIG_IPXE=n CONFIG_QEMU_XEN=y CONFIG_QEMUU_EXTRA_ARGS="--disable-slirp --enable-virtfs --disable-werror" OCAML_TOOLS=y
+			make -j$JOBS dist-tools CONFIG_SEABIOS=n CONFIG_IPXE=n CONFIG_QEMU_XEN=y CONFIG_QEMUU_EXTRA_ARGS="--disable-slirp --enable-virtfs --disable-werror" OCAML_TOOLS=y GIT_HTTP=y
 			make install-tools
 		fi
 
@@ -82,7 +109,7 @@ build_xen() {
 
 build_linux() {
 	print_banner "Linux"
-	clone_and_checkout "nephele-vm/linux" "nephele-v01"
+	clone_and_checkout "nephele-vm/linux" "$BRANCH_DEFAULT"
 	if [ $DO_BUILD -eq 1 ]; then
 		enter_dir linux
 
@@ -105,6 +132,40 @@ build_linux() {
 	fi
 }
 
+build_kfx() {
+	print_banner "KFX"
+	clone_and_checkout "nephele-vm/kernel-fuzzer-for-xen-project" "$BRANCH_DEFAULT" "kfx" "yes"
+	if [ $DO_BUILD -eq 1 ]; then
+		apk add capstone-dev cmake json-c-dev
+
+		enter_dir kfx
+
+		# libvmi
+		enter_dir libvmi
+		autoreconf -vif
+		./configure --disable-kvm --disable-bareflank --disable-file
+		make -j4
+		make install
+		set +e
+		ldconfig
+		set -e
+		exit_dir
+
+		# kfx
+		autoreconf -vif
+		./configure
+		make -j$JOBS
+
+		# AFL
+		enter_dir AFL
+		patch -p1 < ../patches/0001-AFL-Xen-mode.patch
+		make -j$JOBS
+		exit_dir
+
+		exit_dir
+	fi
+}
+
 build_minios() {
 	print_banner "Mini-OS"
 
@@ -113,8 +174,8 @@ build_minios() {
 		[ ! -d $CLONING_APPS_DIR ] && build_unikraft
 	fi
 
-	clone_and_checkout "nephele-vm/lwip" "nephele-v01"
-	clone_and_checkout "nephele-vm/mini-os" "nephele-v01"
+	clone_and_checkout "nephele-vm/lwip" "$BRANCH_DEFAULT"
+	clone_and_checkout "nephele-vm/mini-os" "$BRANCH_DEFAULT"
 
 	if [ $DO_BUILD -eq 1 ]; then
 		enter_dir mini-os
@@ -126,22 +187,22 @@ build_minios() {
 UNIKRAFT_LIBS=(
 	# "<libname>;<branch>
 	"unikraft/lib-intel-intrinsics;1b2af484b21940d7e0eb53b243f30dcb7b5a0ebf"
-	"nephele-unikraft/lib-lwip;nephele-v01"
-	"nephele-unikraft/lib-mimalloc;nephele-v01"
-	"nephele-unikraft/lib-newlib;nephele-v01"
-	"nephele-unikraft/lib-nginx;nephele-v01"
-	"nephele-unikraft/lib-pthread-embedded;nephele-v01"
-	"nephele-unikraft/lib-python3;nephele-v01"
-	"nephele-unikraft/lib-redis;nephele-v01"
+	"nephele-unikraft/lib-lwip;$BRANCH_DEFAULT"
+	"nephele-unikraft/lib-mimalloc;$BRANCH_DEFAULT"
+	"nephele-unikraft/lib-newlib;$BRANCH_DEFAULT"
+	"nephele-unikraft/lib-nginx;$BRANCH_DEFAULT"
+	"nephele-unikraft/lib-pthread-embedded;$BRANCH_DEFAULT"
+	"nephele-unikraft/lib-python3;$BRANCH_DEFAULT"
+	"nephele-unikraft/lib-redis;$BRANCH_DEFAULT"
 	"unikraft/lib-tinyalloc;49f1efcce141ecc2c6d01731f1afea2d0c619eea"
 )
 UNIKRAFT_APPS=(
 	# "<appname>;<branch>
-	"nephele-vm/cloning-apps;nephele-v01"
-	"nephele-unikraft/app-nginx;nephele-v01"
-	"nephele-unikraft/app-python;nephele-v01"
-	"nephele-unikraft/app-redis;nephele-v01"
-	"nephele-unikraft/app-fuzz;nephele-v01"
+	"nephele-vm/cloning-apps;$BRANCH_DEFAULT"
+	"nephele-unikraft/app-nginx;$BRANCH_DEFAULT"
+	"nephele-unikraft/app-python;$BRANCH_DEFAULT"
+	"nephele-unikraft/app-redis;$BRANCH_DEFAULT"
+	"nephele-unikraft/app-fuzz;$BRANCH_DEFAULT"
 )
 
 build_unikraft() {
@@ -149,7 +210,7 @@ build_unikraft() {
 	enter_newdir "unikraft"
 
 	# Clone kernel
-	clone_and_checkout "nephele-unikraft/unikraft" "nephele-v01"
+	clone_and_checkout "nephele-unikraft/unikraft" "$BRANCH_DEFAULT"
 
 	# Clone libs
 	enter_newdir "libs"
@@ -175,7 +236,7 @@ build_unikraft() {
 		cp config/config-unikraft-build .config
 
 		if [ $DO_BUILD -eq 1 ]; then
-			if [ "$name" = "cloning-apps" ]; then
+			if [ "$name" = "cloning-apps" -o "$name" = "fuzz" ]; then
 				make -f Makefile.unikraft prepare
 				make -f Makefile.unikraft -j$JOBS
 			else
@@ -198,9 +259,9 @@ COMPONENT="$1"
 if [ -z "$COMPONENT" -o "$COMPONENT" = "all" ]; then
 	build_xen all
 	build_linux all
-	build_ovs
 	build_unikraft
 	build_minios
+	build_kfx
 
 elif [ "$COMPONENT" = "xen" ]; then
 	build_xen hypervisor
@@ -211,15 +272,17 @@ elif [ "$COMPONENT" = "linux" ]; then
 
 elif [ "$COMPONENT" = "userspace" ]; then
 	build_xen tools
-	build_ovs
 
 elif [ "$COMPONENT" = "guests" ]; then
 	build_unikraft
 	build_minios
 
+elif [ "$COMPONENT" = "kfx" ]; then
+	build_kfx
+
 else
 	echo "Unknown component: $COMPONENT."
-	echo "Usage: $0 [all|xen|linux|userspace|guests]"
+	echo "Usage: $0 [all|xen|linux|userspace|guests|kfx]"
 	exit 2
 fi
 
