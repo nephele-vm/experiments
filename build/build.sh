@@ -19,6 +19,8 @@ else
 	BRANCH_DEFAULT="tags/eurosys23"
 fi
 
+cat /etc/*release* | grep -i alpine &>/dev/null && OS="alpine"
+
 enter_dir()    { pushd "$1" &>/dev/null; }
 enter_newdir() { mkdir -p "$1" &>/dev/null; enter_dir "$1"; }
 exit_dir()     { popd &>/dev/null; }
@@ -50,10 +52,14 @@ clone_and_checkout() {
 	fi
 
 	enter_dir $name
-	if [ `dirname $branch` = "tags" ]; then
-		git checkout $branch -b `basename $branch`
-	else
-		git checkout $branch
+	local current_branch_basename=$(basename $(git rev-parse --abbrev-ref HEAD))
+	local branch_basename=$(basename $branch)
+	if [ "$current_branch_basename" != "$branch_basename" ]; then
+		if [ `dirname $branch` = "tags" ]; then
+			git checkout $branch -b "$branch_basename"
+		else
+			git checkout $branch
+		fi
 	fi
 	[ "$submodules" = "yes" ] && git submodule update --init
 	exit_dir
@@ -136,7 +142,12 @@ build_kfx() {
 	print_banner "KFX"
 	clone_and_checkout "nephele-vm/kernel-fuzzer-for-xen-project" "$BRANCH_DEFAULT" "kfx" "yes"
 	if [ $DO_BUILD -eq 1 ]; then
-		apk add capstone-dev cmake json-c-dev
+		if [ "$OS" = "alpine" ]; then
+			apk add capstone-dev cmake json-c-dev
+		else
+			echo "Unsupported OS for building KFX"
+			exit 2
+		fi
 
 		enter_dir kfx
 
