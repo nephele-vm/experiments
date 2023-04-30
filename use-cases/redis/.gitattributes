@@ -1,0 +1,2 @@
+process/redis-cli filter=lfs diff=lfs merge=lfs -text
+process/redis-server filter=lfs diff=lfs merge=lfs -text

@@ -1,0 +1,20 @@
+name = "unikraft-redis"
+kernel = "/root/images/unikraft/experiments/redis/redis_xen-x86_64"
+#kernel = "/root/images/unikraft/experiments/redis/redis_xen-x86_64.dbg"
+memory = "${APP_MEMORY}"
+vcpus = "1"
+#cpus="6-9"
+cpus="2-5"
+on_shutdown = "preserve"
+on_crash = "preserve"
+on_reboot = "destroy"
+
+vif=[ 'mac=aa:bb:cc:06:06:02,ip=10.8.0.2 255.255.255.0 10.8.0.1,bridge=bond0' ]
+
+p9 = [ 'tag=test,security_model=none,path=/root/images/unikraft/experiments/redis/rootfs' ]
+#ramdisk = "/root/images/unikraft/experiments/redis/initramfs.cpio"
+
+max_clones="2"
+skip_cloning="network"
+cmdline="vfs.rootdev=test mmap.percent=${APP_PERC} -- /redis.vm.conf"
+
